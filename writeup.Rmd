@@ -1,0 +1,121 @@
+---
+title: "Prediction of Activities"
+author: "Christopher Velayo"
+date: "Wednesday, October 22, 2014"
+output: html_document
+---
+
+#Summary
+
+The purpose of this assignment is to create a model based on a training set to predict how people performed barbell lifts based on accelerometer data. This model is then to be applied to a test set to determine the accuracy of the model. The information for this project came from the Human Activity Recognition dataset of the Groupware@LES group.  
+
+#Preprocessing of Data
+
+The course made available two CSV files with the needed data, pml-training.csv and pml-training.csv. The first step is to download the files and to read them into R.
+
+```{r data}
+temptrainingdata <- read.csv("training.csv", stringsAsFactors = FALSE)
+temptestingdata <- read.csv("testing.csv", stringsAsFactors = FALSE)
+```
+
+The next step is to perform some exploratory analyses to determine the suitability of the data.
+
+```{r exploration}
+dim(temptrainingdata)
+dim(temptestingdata)
+
+head(temptrainingdata)
+head(temptestingdata)
+
+```
+
+Due to the number of blank and NA values, further exploration was done which showed that most of the blank and NA values came in a set of variables that only periodically had data. After determining the variables that consistently had values entered, subsets of the data were created containing only those variables. Also, the column containg the activity type was split off into its own vector.
+
+```{r subsetting}
+#Using grep to identify the variables to keep and creating a column index. 
+numeric <- which(as.logical(grepl("^total_accel.*", names(temptrainingdata))+
+                                grepl("^accel.*", names(temptrainingdata))+
+                                grepl("^gyros.*", names(temptrainingdata))+
+                                grepl("^magnet.*", names(temptrainingdata))+
+                                grepl("^roll.*", names(temptrainingdata))+
+                                grepl("^pitch.*", names(temptrainingdata))+
+                                grepl("^yaw.*", names(temptrainingdata))))
+#Using the column index to subset the testing and traing data
+subset <- temptrainingdata[,numeric]
+testing <- temptestingdata[,numeric]
+
+#Creating a vector with the true answers
+answers <- as.factor(data$classe)
+```
+
+#Partitioning
+
+To assess the accuracy of the model prior to applying the model to the testing data, the decision was made to create a cross validation data set. This was done using the createDataPartition function from the caret package. To minimize the chances of overfitting, the training data was split with 60% assigned to develop the model, and 40% assigned to cross validate the model.
+
+```{r partitioning}
+# Setting seed to ensure reproducibility
+set.seed(3743)
+# Loading caret package
+suppressMessages(library(caret))
+
+#Creating an index to split the data 60/40, then using the index to create the testing and
+#cross validation sets
+cvIndex = createDataPartition(answers, p = 0.60,list=FALSE)
+training <- subset[cvIndex,]
+traininganswers <- as.factor(answers[cvIndex])
+crossval <- subset[-cvIndex,]
+crossvalanswers <- as.factor(answers[-cvIndex])
+```
+
+#Creating models to choose from
+
+To help increase the chances of an accurate model, several model types were used by caret to train the prediction model. I chose to use the Random Forest model, the Decision Tree model, and the Support Vector Machine with Linear Kernel model. Below are the results of each model.
+
+```{r models,cache=TRUE}
+#load required libraries
+suppressMessages(library(rpart))
+suppressMessages(library(randomForest))
+suppressMessages(library(kernlab))
+
+#Random Forest Model
+rfmodel <- train(training, traininganswers, method="rf")
+rfmodel$finalModel
+
+#Decision Tree Model
+treemodel <- train(training,traininganswers, method="rpart")
+treemodel
+
+#Support Vector Machine Model
+svmmodel <- train(training, traininganswers, method="svmLinear")
+svmmodel$finalModel
+```
+
+#Initial results
+
+Based on the accuracy of the various models, the random forest model presented with the highest accuracy and an estimated out of sample error rate of 0.64%. In comparison, the support vector machine model has an estimated out of sample error rate of 21.1%, and the decision tree model has an estimated out of sample error rate of 50%. Especially with the very high accuracy for the random forest model, these models were applied to the cross validation data to check the estimates.
+
+```{r cross-validation}
+#Use models to predict activity quality based on cross-validation dataset
+rfcrossval <- predict(rfmodel, crossval)
+treecrossval <- predict(treemodel, crossval)
+svmcrossval <- predict(svmmodel, crossval)
+
+#Compute accuracy
+sum(crossvalanswers == rfcrossval)/length(crossvalanswers)
+sum(crossvalanswers == treecrossval)/length(crossvalanswers)
+sum(crossvalanswers == svmcrossval)/length(crossvalanswers)
+```
+
+Comparing these results to the estimates, we can see that while the decision tree and support vector machine models performed slightly worse on the cross-validation data, the random forest model performed about the same. While performing a principal compnent analysis was considered, with the already very high accuracy, the decision was made to not do the analysis as the potential gain seemed minimal.
+
+```{r confusion}
+confusionMatrix(rfcrossval, crossvalanswers)
+```
+
+#Analysis of model
+
+Based on the crossvalidation confusion matrix, the model appears to have the hardest time classifying C activities and the easiest time classifying E activities. The most common mistakes were classifying C activities as D activities, and classifying B activities as C activities. Further exploration around these mistakes may identify interesting issues in the data. It is also interesting that the confusion matrix based on the training data differed from the confusion matrix with the cross-validation data.
+
+#Results
+
+After using the model to predict the activities based on the test data, these predictions were submitted to the Coursera website. All predicitons were correct based on the autograder. In comparison, the decision tree model got 6 predictions correctly, and the support vector machine model got 15 predictions correct, making it clear that the random forest model would the correct one to choose.
